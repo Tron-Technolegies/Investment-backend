@@ -142,6 +142,11 @@ DATABASES = {
         conn_max_age=600,
     )
 }
+
+if not DATABASES.get("default", {}).get("ENGINE"):
+    raise RuntimeError(
+        "DATABASE_URL is missing. Check your local .env file."
+    )
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
