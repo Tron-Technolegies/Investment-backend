@@ -846,3 +846,77 @@ class ConsultingPartnerKYCDocumentView(APIView):
                 else status.HTTP_200_OK
             ),
         )
+
+
+
+class AdminPartnerKYCDocumentReviewView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, document_id):
+        try:
+            document = PartnerKYCDocument.objects.get(
+                pk=document_id
+            )
+        except PartnerKYCDocument.DoesNotExist:
+            return Response(
+                {"detail": "KYC document not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get("status")
+        admin_note = request.data.get("admin_note", "")
+
+        allowed_statuses = {
+            "under_review",
+            "verified",
+            "rejected",
+            "requires_update",
+        }
+
+        if new_status not in allowed_statuses:
+            return Response(
+                {
+                    "status": (
+                        "Choose under_review, verified, "
+                        "rejected, or requires_update."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(admin_note, str):
+            return Response(
+                {"admin_note": "Enter a valid text note."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        admin_note = admin_note.strip()
+
+        if new_status in {"rejected", "requires_update"} and not admin_note:
+            return Response(
+                {
+                    "admin_note": (
+                        "A note is required when rejecting a "
+                        "document or requesting an update."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        document.status = new_status
+        document.admin_note = admin_note
+        document.save(update_fields=["status", "admin_note", "updated_at"])
+
+        serializer = PartnerKYCDocumentSerializer(
+            document,
+            context={"request": request},
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": "KYC document review updated successfully.",
+                "data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )

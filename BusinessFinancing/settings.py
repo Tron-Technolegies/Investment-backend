@@ -15,7 +15,7 @@ from pathlib import Path
 import os
 from django.apps import config
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -143,9 +143,9 @@ DATABASES = {
     )
 }
 
-if not DATABASES.get("default", {}).get("ENGINE"):
+if not DATABASES["default"].get("HOST"):
     raise RuntimeError(
-        "DATABASE_URL is missing. Check your local .env file."
+        "DATABASE_URL is missing or invalid. Check your .env file."
     )
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators

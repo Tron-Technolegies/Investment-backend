@@ -13,7 +13,9 @@ urlpatterns = [
     path("projects/<int:project_id>/submit-verification/",views.ConsultingPartnerSubmitVerificationView.as_view(),name="consulting-partner-submit-verification"),    
     path("completed-reviews/",views.ConsultingPartnerCompletedReviewsView.as_view(),name="consulting-partner-completed-reviews"),
     path("my-profile/",views.ConsultingPartnerProfileView.as_view(),name="consulting-partner-profile"),
-    path("my-kyc-documents/",views.ConsultingPartnerKYCDocumentView.as_view(),name="consulting-partner-kyc-documents")
+    path("my-kyc-documents/",views.ConsultingPartnerKYCDocumentView.as_view(),name="consulting-partner-kyc-documents"),
+    path("admin/kyc-documents/<int:document_id>/review/",views.AdminPartnerKYCDocumentReviewView.as_view(),name="admin-partner-kyc-document-review"),
+
 
 
 ]
