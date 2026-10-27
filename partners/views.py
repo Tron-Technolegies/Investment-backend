@@ -700,6 +700,7 @@ class ConsultingPartnerKYCDocumentView(APIView):
         except PartnerProfile.DoesNotExist:
             return None
 
+    
     def get(self, request):
         partner = self.get_partner(request)
 
@@ -711,7 +712,7 @@ class ConsultingPartnerKYCDocumentView(APIView):
 
         documents = PartnerKYCDocument.objects.filter(
             partner=partner
-        ).select_related("partner")
+        ).order_by("document_type")
 
         serializer = PartnerKYCDocumentSerializer(
             documents,
@@ -719,14 +720,57 @@ class ConsultingPartnerKYCDocumentView(APIView):
             context={"request": request},
         )
 
+        # All six KYC document types defined in the model.
+        all_document_types = {
+            choice[0]
+            for choice in PartnerKYCDocument.DOCUMENT_TYPE_CHOICES
+        }
+
+        # Count documents that have been verified.
+        verified_count = documents.filter(
+            status="verified"
+        ).count()
+
+        # Count documents that need to be updated or re-uploaded.
+        documents_requiring_update = documents.filter(
+            status="requires_update"
+        ).count()
+
+        # Identify document types that have not been uploaded.
+        uploaded_types = set(
+            documents.values_list("document_type", flat=True)
+        )
+
+        missing_documents = [
+            {
+                "document_type": document_type,
+                "document_type_display": display_name,
+            }
+            for document_type, display_name
+            in PartnerKYCDocument.DOCUMENT_TYPE_CHOICES
+            if document_type not in uploaded_types
+        ]
+
+        total_count = len(all_document_types)
+
         return Response(
             {
                 "success": True,
                 "count": documents.count(),
+                "summary": {
+                    "verified_count": verified_count,
+                    "total_count": total_count,
+                    "completion_text": f"{verified_count}/{total_count}",
+                    "documents_requiring_update": (
+                        documents_requiring_update
+                    ),
+                    "missing_documents": missing_documents,
+                },
                 "results": serializer.data,
             },
             status=status.HTTP_200_OK,
         )
+
 
     def post(self, request):
         partner = self.get_partner(request)
