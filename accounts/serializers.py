@@ -236,6 +236,11 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 "email": "Invalid email or password."
             })
+        
+
+        print("LOGIN EMAIL:", repr(email))
+        print("DATABASE USER TYPE:", repr(user.user_type))
+        print("REQUEST USER TYPE:", repr(user_type))
 
         if user.user_type != user_type:
             raise serializers.ValidationError({
