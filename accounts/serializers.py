@@ -227,6 +227,10 @@ class LoginSerializer(serializers.Serializer):
 
         try:
             user = CustomUser.objects.get(email__iexact=email)
+            print("LOGIN DATABASE:", user._state.db)
+            print("LOGIN USER ID:", user.pk)
+            print("LOGIN USER TYPE:", repr(user.user_type))
+            print("LOGIN IS SUPERUSER:", user.is_superuser)
         except CustomUser.DoesNotExist:
             raise serializers.ValidationError({
                 "email": "Invalid email or password."
