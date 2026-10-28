@@ -19,6 +19,7 @@ from .serializers import (
     PartnerListSerializer,
     PartnerCreateSerializer,
     PartnerDetailSerializer,
+    PartnerUpdateSerializer,
     ConsultingPartnerProfileSerializer,
     PartnerKYCDocumentSerializer
 )
@@ -876,6 +877,47 @@ class AdminPartnerKYCDocumentReviewView(APIView):
                 "success": True,
                 "message": "KYC document review updated successfully.",
                 "data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+
+class PartnerUpdateView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @transaction.atomic
+    def patch(self, request, pk):
+        try:
+            partner = (
+                PartnerProfile.objects
+                .select_related("user")
+                .get(pk=pk)
+            )
+        except PartnerProfile.DoesNotExist:
+            return Response(
+                {"detail": "Funding Partner not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = PartnerUpdateSerializer(
+            partner,
+            data=request.data,
+            partial=True,
+        )
+
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        partner = serializer.save()
+
+        return Response(
+            {
+                "message": "Funding Partner updated successfully.",
+                "partner": PartnerDetailSerializer(partner).data,
             },
             status=status.HTTP_200_OK,
         )

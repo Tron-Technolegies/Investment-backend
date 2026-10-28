@@ -5,6 +5,7 @@ urlpatterns = [
     path("",views.PartnerListView.as_view(),name="partner-list"),
     path("create/",views.PartnerCreateView.as_view(),name="partner-create"),
     path("<int:pk>/",views.PartnerDetailView.as_view(),name="partner-detail"),
+    path("<int:pk>/update/",views.PartnerUpdateView.as_view(),name="partner-update"),
     path("<int:pk>/deactivate/",views.PartnerDeactivateView.as_view(),name="partner-deactivate"),
     path("<int:pk>/activate/",views.PartnerActivateView.as_view(),name="partner-activate"),
     path("dashboard/",views.ConsultingPartnerDashboardView.as_view(),name="consulting-partner-dashboard"),
