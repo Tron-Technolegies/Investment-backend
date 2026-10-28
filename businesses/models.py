@@ -44,7 +44,12 @@ class BusinessProfile(models.Model):
 
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='business_profile')
 
-    full_name = models.CharField(max_length=255)
+    
+    full_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default=""
+    )
     business_trade_name = models.CharField(max_length=255)
 
     cin_reg_no = models.CharField(
@@ -84,12 +89,23 @@ class BusinessProfile(models.Model):
         default="active"
     )
 
-    business_incorporation_date = models.DateField()
+    business_incorporation_date = models.DateField(
+        null=True,
+        blank=True
+    )
     finance_type = models.ManyToManyField(FinanceType,related_name='businesses')
-    finance_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    customers = models.TextField()
-    funding_purpose = models.CharField(max_length=255)
-    preferred_funding_term = models.CharField(max_length=100)
+    finance_amount = models.DecimalField(
+            max_digits=15,
+            decimal_places=2,
+            null=True,
+            blank=True
+        )
+    customers = models.TextField(
+            blank=True,
+            default=""
+        )
+    funding_purpose = models.CharField(max_length=255,blank=True,default="")
+    preferred_funding_term = models.CharField(max_length=100,blank=True,default="")
     verification_status = models.CharField(
         max_length=30,
         choices=VERIFICATION_STATUS_CHOICES,

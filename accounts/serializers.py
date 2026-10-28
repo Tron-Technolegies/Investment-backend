@@ -68,105 +68,90 @@ class InvestorRegistrationSerializer(serializers.Serializer):
         return user
 
 
+
 class BusinessRegistrationSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150, required=True)
-    email = serializers.EmailField(required=True)
-    confirm_email = serializers.EmailField(required=True)
+    business_trade_name = serializers.CharField(max_length=255)
 
-    password = serializers.CharField(write_only=True, required=True)
-    confirm_password = serializers.CharField(write_only=True, required=True)
-
-    business_trade_name = serializers.CharField(
-        max_length=255,
-        required=True
+    business_type = serializers.ChoiceField(
+        choices=BusinessProfile.BUSINESS_TYPE_CHOICES
     )
 
-    business_incorporation_date = serializers.DateField(
-        required=True
+    sector = serializers.ChoiceField(
+        choices=BusinessProfile.SECTOR_CHOICES,
+        required=False,
+        allow_blank=True
     )
 
-    finance_type = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=True,
-        allow_empty=False
-    )
-
-    finance_amount = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        required=True
-    )
-
-    customers = serializers.CharField(required=True)
-
-    funding_purpose = serializers.CharField(
-        max_length=255,
-        required=True
-    )
-
-    preferred_funding_term = serializers.CharField(
+    cin_reg_no = serializers.CharField(
         max_length=100,
-        required=True
+        required=False,
+        allow_blank=True
     )
 
+    city_hq = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True
+    )
+
+    email = serializers.EmailField()
+
+    mobile_number = serializers.CharField(max_length=20)
+
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8
+    )
+
+    confirm_password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        if data["email"].lower() != data["confirm_email"].lower():
-            raise serializers.ValidationError({
-                "confirm_email": "Email addresses do not match."
-            })
-
         if data["password"] != data["confirm_password"]:
             raise serializers.ValidationError({
                 "confirm_password": "Passwords do not match."
             })
 
-        if CustomUser.objects.filter(
-            email__iexact=data["email"]
-        ).exists():
+        email = data["email"].strip().lower()
+
+        if CustomUser.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError({
                 "email": "An account with this email already exists."
             })
 
-        if CustomUser.objects.filter(
-            username__iexact=data["username"]
-        ).exists():
+        if CustomUser.objects.filter(username__iexact=email).exists():
             raise serializers.ValidationError({
-                "username": "An account with this username already exists."
+                "email": "This email is already used as a username."
             })
 
-        if not data["finance_type"]:
-            raise serializers.ValidationError({
-                "finance_type": "Select at least one finance type."
-            })
-
+        data["email"] = email
         return data
 
-
-
     def create(self, validated_data):
-        validated_data.pop("confirm_email")
         validated_data.pop("confirm_password")
-
         password = validated_data.pop("password")
-        finance_type_ids = validated_data.pop("finance_type")
+
+        email = validated_data.pop("email")
 
         user = CustomUser.objects.create_user(
-            username=validated_data.pop("username"),
-            email=validated_data.pop("email"),
+            username=email,
+            email=email,
             password=password,
-            user_type="business",
+            user_type="business"
         )
 
-        business_profile = BusinessProfile.objects.create(
+        BusinessProfile.objects.create(
             user=user,
-            **validated_data
+            full_name="",
+            business_trade_name=validated_data["business_trade_name"],
+            business_type=validated_data["business_type"],
+            sector=validated_data.get("sector") or None,
+            cin_reg_no=validated_data.get("cin_reg_no") or None,
+            city_hq=validated_data.get("city_hq") or None,
+            mobile_number=validated_data["mobile_number"]
         )
-
-        business_profile.finance_type.set(finance_type_ids)
-
 
         return user
+
 
 
 class FinanceTypeSerializer(serializers.ModelSerializer):
