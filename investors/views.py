@@ -16,12 +16,20 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from businesses.models import ProjectFundingInterest
 from projects.models import Project
+import logging
+from django.conf import settings
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
 
 
+logger = logging.getLogger(__name__)
 class InvestorListView(ListAPIView):
     queryset = InvestorProfile.objects.select_related("user").all().order_by("-user__created_at")
     serializer_class = InvestorListSerializer
     permission_classes = [IsAdminUser]
+
 
 class InvestorCreateView(APIView):
     permission_classes = [IsAdminUser]
@@ -30,51 +38,65 @@ class InvestorCreateView(APIView):
     def post(self, request):
         serializer = InvestorCreateSerializer(data=request.data)
 
-        if serializer.is_valid():
-            data = serializer.validated_data
-            print("VALIDATED DATA:", data)
-
-            # Check whether email already exists
-            if CustomUser.objects.filter(email=data["email"]).exists():
-                return Response(
-                    {
-                        "email": "An account with this email already exists."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Create investor account
-            user = CustomUser.objects.create(
-                username=data["email"],
-                email=data["email"],
-                user_type="investor",
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-            # Password cannot be used until investor sets one
-            user.set_unusable_password()
-            user.save()
+        data = serializer.validated_data
 
-            # Create investor profile
-            investor = InvestorProfile.objects.create(
-                user=user,
-                full_name=data["full_name"],
-                organization=data.get("organization", ""),
-                investor_type=data["investor_type"],
-                mobile_number=data["mobile_number"],
-                status=data["status"],
+        # Check whether email already exists
+        if CustomUser.objects.filter(
+            email__iexact=data["email"]
+        ).exists():
+            return Response(
+                {"email": "An account with this email already exists."},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-            # Generate password setup token
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
+        # Create investor account
+        user = CustomUser.objects.create_user(
+            username=data["email"],
+            email=data["email"],
+            user_type="investor",
+        )
 
-            # Temporary development setup URL
-            setup_url = (
-                f"http://127.0.0.1:8000/accounts/set-password/"
-                f"?uid={uid}&token={token}"
-            )
+        # Investor must set a password before logging in
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
 
-            # Send email
+        # Create investor profile
+        investor = InvestorProfile.objects.create(
+            user=user,
+            full_name=data["full_name"],
+            organization=data.get("organization", ""),
+            investor_type=data["investor_type"],
+            mobile_number=data["mobile_number"],
+            status=data["status"],
+        )
+
+        # Generate password setup token
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+        # Use the deployed frontend URL from Render environment variables.
+        frontend_url = os.getenv(
+            "FRONTEND_URL",
+            "http://localhost:5174"
+        ).rstrip("/")
+
+        # Ensure this path matches your frontend router.
+        setup_url = (
+            f"{frontend_url}/set-password"
+            f"?uid={uid}&token={token}"
+        )
+
+        # Email failure must not turn successful investor creation
+        # into an HTTP 500 response.
+        email_sent = False
+
+        try:
             send_mail(
                 subject="Complete Your Investor Account Setup",
                 message=(
@@ -82,35 +104,48 @@ class InvestorCreateView(APIView):
                     "Your investor account has been created.\n\n"
                     "Please use the following link to set your password:\n\n"
                     f"{setup_url}\n\n"
-                    "After setting your password, you can log in to the platform.\n\n"
                     "Regards,\n"
                     "Business Financing Team"
                 ),
-                from_email=None,
+                from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
+                fail_silently=False,
+            )
+            email_sent = True
+
+        except Exception:
+            logger.exception(
+                "Failed to send investor setup email for investor ID %s",
+                investor.id,
             )
 
-            return Response(
-                {
-                    "message": "Investor created successfully. "
-                               "Password setup email has been sent.",
-                    "investor": {
-                        "id": investor.id,
-                        "full_name": investor.full_name,
-                        "organization": investor.organization,
-                        "investor_type": investor.investor_type,
-                        "email": user.email,
-                        "mobile_number": investor.mobile_number,
-                        "status": investor.status,
-                    },
-                },
-                status=status.HTTP_201_CREATED,
+        message = "Investor created successfully."
+
+        if email_sent:
+            message += " Password setup email has been sent."
+        else:
+            message += (
+                " The setup email could not be sent. "
+                "Please retry email delivery."
             )
 
         return Response(
-            serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
+            {
+                "message": message,
+                "email_sent": email_sent,
+                "investor": {
+                    "id": investor.id,
+                    "full_name": investor.full_name,
+                    "organization": investor.organization,
+                    "investor_type": investor.investor_type,
+                    "email": user.email,
+                    "mobile_number": investor.mobile_number,
+                    "status": investor.status,
+                },
+            },
+            status=status.HTTP_201_CREATED,
         )
+
 
 class InvestorDetailView(RetrieveAPIView):
     queryset = InvestorProfile.objects.select_related("user").all()
