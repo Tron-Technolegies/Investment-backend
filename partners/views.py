@@ -45,14 +45,13 @@ class PartnerListView(APIView):
             status=status.HTTP_200_OK
         )
 
+
 class PartnerCreateView(APIView):
     permission_classes = [IsAdminUser]
 
     @transaction.atomic
     def post(self, request):
-        serializer = PartnerCreateSerializer(
-            data=request.data
-        )
+        serializer = PartnerCreateSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(
@@ -62,70 +61,29 @@ class PartnerCreateView(APIView):
 
         data = serializer.validated_data
 
-        if CustomUser.objects.filter(
-            email__iexact=data["email"]
-        ).exists():
-            return Response(
-                {
-                    "email": (
-                        "An account with this email "
-                        "already exists."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Create an account with a usable, securely hashed password.
+        email = data["email"]
 
-        user = CustomUser.objects.create(
-            username=data["email"],
-            email=data["email"],
-            user_type="consulting_partner",
+        user = CustomUser.objects.create_user(
+            username=email,
+            email=email,
+            password=data["password"],
+            user_type="consulting_partner"
         )
 
-        user.set_unusable_password()
-        user.save()
-
+        # Create the partner profile.
         partner = PartnerProfile.objects.create(
             user=user,
             full_name=data["full_name"],
             organization_name=data["organization_name"],
             specialty=data["specialty"],
-            phone=data.get("phone"),
-            status=data["status"],
+            phone=data.get("phone", ""),
+            status=data["status"]
         )
-
-        token = default_token_generator.make_token(user)
-
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-        setup_url = (
-            f"http://127.0.0.1:8000/accounts/set-password/"
-            f"?uid={uid}&token={token}"
-        )
-        print("Sending partner invitation to:", user.email)
-        send_mail(
-            subject="Complete Your Funding Partner Account Setup",
-            message=(
-                f"Hello {partner.full_name},\n\n"
-                "Your Funding Partner account has been "
-                "created on the Business Financing Platform.\n\n"
-                "Please use the following link to set "
-                "your password:\n\n"
-                f"{setup_url}\n\n"
-                "After setting your password, you can "
-                "log in to the platform.\n\n"
-                "Regards,\n"
-                "Business Financing Team"
-            ),
-            from_email=None,
-            recipient_list=[user.email],
-        )
-        print("Partner invitation sent")
 
         return Response(
             {
-                "message": (
-                    "Funding Partner created successfully."
-                ),
+                "message": "Funding Partner created successfully.",
                 "partner": {
                     "id": partner.id,
                     "full_name": partner.full_name,
@@ -133,11 +91,12 @@ class PartnerCreateView(APIView):
                     "specialty": partner.specialty,
                     "email": user.email,
                     "phone": partner.phone,
-                    "status": partner.status,
-                },
+                    "status": partner.status
+                }
             },
             status=status.HTTP_201_CREATED
         )
+
 
 class PartnerDetailView(APIView):
     permission_classes = [IsAdminUser]

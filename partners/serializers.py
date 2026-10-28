@@ -20,14 +20,11 @@ class PartnerListSerializer(serializers.ModelSerializer):
             "email",
             "status",
         ]
-class PartnerCreateSerializer(serializers.Serializer):
-    full_name = serializers.CharField(
-        max_length=255
-    )
 
-    organization_name = serializers.CharField(
-        max_length=255
-    )
+class PartnerCreateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255)
+
+    organization_name = serializers.CharField(max_length=255)
 
     specialty = serializers.ChoiceField(
         choices=PartnerProfile.SPECIALTY_CHOICES
@@ -45,6 +42,43 @@ class PartnerCreateSerializer(serializers.Serializer):
         choices=PartnerProfile.STATUS_CHOICES,
         default="active"
     )
+
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        trim_whitespace=False
+    )
+
+    confirm_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False
+    )
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate(self, data):
+        if data["password"] != data["confirm_password"]:
+            raise serializers.ValidationError({
+                "confirm_password": "Passwords do not match."
+            })
+
+        if CustomUser.objects.filter(
+            email__iexact=data["email"]
+        ).exists():
+            raise serializers.ValidationError({
+                "email": "An account with this email already exists."
+            })
+
+        if CustomUser.objects.filter(
+            username__iexact=data["email"]
+        ).exists():
+            raise serializers.ValidationError({
+                "email": "This email is already used as a username."
+            })
+
+        return data
+
 
 class PartnerDetailSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
