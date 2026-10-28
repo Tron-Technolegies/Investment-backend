@@ -10,98 +10,63 @@ from investors.models import InvestorProfile
 from businesses.models import BusinessProfile
 from rest_framework_simplejwt.tokens import RefreshToken
 
+
 class InvestorRegistrationSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150, required=True)
-    email = serializers.EmailField(required=True)
-    confirm_email = serializers.EmailField(required=True)
-
-    password = serializers.CharField(write_only=True, required=True)
-    confirm_password = serializers.CharField(write_only=True, required=True)
-
-    full_name = serializers.CharField(max_length=255, required=True)
-    date_of_birth = serializers.DateField(required=True)
-
-    nationality = serializers.CharField(max_length=100, required=True)
-    country_of_residence = serializers.CharField(max_length=100, required=True)
-    place_of_birth = serializers.CharField(max_length=100, required=True)
-
-    mobile_number = serializers.CharField(max_length=20, required=True)
-
-    marketing_consent = serializers.BooleanField(required=True)
-    terms_accepted = serializers.BooleanField(required=True)
-
-    referral_source = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    full_name = serializers.CharField(max_length=255)
+    organization = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True
+    )
+    investor_type = serializers.ChoiceField(
+        choices=InvestorProfile._meta.get_field("investor_type").choices
+    )
+    email = serializers.EmailField()
+    mobile_number = serializers.CharField(max_length=20)
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8
+    )
+    confirm_password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        if data['email'].lower() != data['confirm_email'].lower():
+        if data["password"] != data["confirm_password"]:
             raise serializers.ValidationError({
-                "confirm_email" : "Email address do not match"
-            })
-
-        if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError({
-                "confirm_password" : "Password do not match"
-            })
-
-        if not data["terms_accepted"]:
-            raise serializers.ValidationError({
-                "terms_accepted" : "You must accept the Terms & Privacy Policy."
+                "confirm_password": "Passwords do not match."
             })
 
         if CustomUser.objects.filter(
-            email__iexact=data['email']
+            email__iexact=data["email"]
         ).exists():
             raise serializers.ValidationError({
-                "email" : "A account with this email already exists."
-            })
-
-        if CustomUser.objects.filter(
-            username__iexact=data['username']
-        ).exists():
-            raise serializers.ValidationError({
-                "username" : "A account with this username already exists."
+                "email": "An account with this email already exists."
             })
 
         return data
 
     def create(self, validated_data):
-        validated_data.pop ("confirm_email")
-        validated_data.pop ("confirm_password")
-
+        validated_data.pop("confirm_password")
         password = validated_data.pop("password")
 
-        full_name = validated_data.pop("full_name")
-        date_of_birth = validated_data.pop("date_of_birth")
-        nationality = validated_data.pop("nationality")
-        country_of_residence = validated_data.pop("country_of_residence")
-        place_of_birth = validated_data.pop("place_of_birth")
-        mobile_number = validated_data.pop("mobile_number")
-        marketing_consent = validated_data.pop("marketing_consent")
-        terms_accepted = validated_data.pop("terms_accepted")
-        referral_source = validated_data.pop("referral_source", "")
+        email = validated_data["email"]
 
         user = CustomUser.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
+            username=email,
+            email=email,
             password=password,
             user_type="investor"
         )
 
         InvestorProfile.objects.create(
-
             user=user,
-            full_name=full_name,
-            date_of_birth=date_of_birth,
-            nationality=nationality,
-            country_of_residence=country_of_residence,
-            place_of_birth=place_of_birth,
-            mobile_number=mobile_number,
-            marketing_consent=marketing_consent,
-            terms_accepted=terms_accepted,
-            referral_source=referral_source,
+            full_name=validated_data["full_name"],
+            organization=validated_data.get("organization", ""),
+            investor_type=validated_data["investor_type"],
+            mobile_number=validated_data["mobile_number"]
         )
 
         return user
+
 
 class BusinessRegistrationSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150, required=True)
