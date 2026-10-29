@@ -576,9 +576,6 @@ def project_documents(request, pk):
 
     
     document_name = request.data.get("document_name")
-    print("CONTENT_TYPE:", request.content_type)
-    print("REQUEST DATA:", request.data)
-    print("FILES:", request.FILES)
     uploaded_file = request.FILES.get("file")
     requirement_id = request.data.get("requirement")
 
@@ -659,15 +656,49 @@ def project_documents(request, pk):
         )
 
     # Save the uploaded document with its requirement.
-    document = ProjectDocument.objects.create(
-        project=project,
-        requirement=requirement,
-        document_name=document_name,
-        file=uploaded_file,
-        status="uploaded",
-        uploaded_by=request.user,
-        uploaded_at=timezone.now(),
+# Find the existing document for this project and requirement.
+    document = (
+        ProjectDocument.objects
+        .filter(project=project, requirement=requirement)
+        .order_by("-created_at")
+        .first()
     )
+
+    if document and document.status == "approved":
+        return Response(
+            {"detail": "An approved document cannot be replaced."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Keep the old file name so it can be removed after replacement.
+    old_file_name = document.file.name if document and document.file else None
+
+    if document:
+        # Update the existing record.
+        document.document_name = document_name
+        document.file = uploaded_file
+        document.status = "uploaded"
+        document.uploaded_by = request.user
+        document.uploaded_at = timezone.now()
+        document.admin_note = ""
+        document.reviewed_by = None
+        document.reviewed_at = None
+        document.save()
+    else:
+        # Create a record only for the first upload.
+        document = ProjectDocument.objects.create(
+            project=project,
+            requirement=requirement,
+            document_name=document_name,
+            file=uploaded_file,
+            status="uploaded",
+            uploaded_by=request.user,
+            uploaded_at=timezone.now(),
+        )
+
+    # Remove the previous file from storage after saving the replacement.
+    if old_file_name and document.file.name != old_file_name:
+        document.file.storage.delete(old_file_name)
 
     serializer = ProjectDocumentSerializer(
         document,

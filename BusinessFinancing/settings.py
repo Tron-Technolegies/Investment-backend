@@ -117,6 +117,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5177",
     "http://127.0.0.1:5177",
     "https://funding-partner.netlify.app",
+    "https://investment-admin-dashboard.netlify.app",
+    "https://investment-consultant-dashboard.netlify.app",
+    "https://investment-business-dashboard.netlify.app",
 
      
 ]

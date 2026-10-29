@@ -99,14 +99,11 @@ class PartnerDetailSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
-class PartnerUpdateSerializer(serializers.Serializer):
-    full_name = serializers.CharField(
-        max_length=255
-    )
 
-    organization_name = serializers.CharField(
-        max_length=255
-    )
+class PartnerUpdateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255)
+
+    organization_name = serializers.CharField(max_length=255)
 
     specialty = serializers.ChoiceField(
         choices=PartnerProfile.SPECIALTY_CHOICES
@@ -124,34 +121,95 @@ class PartnerUpdateSerializer(serializers.Serializer):
         choices=PartnerProfile.STATUS_CHOICES
     )
 
+    # Additional profile fields
+    years_of_experience = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True
+    )
+
+    sebi_registration_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True
+    )
+
+    license_certificate_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True
+    )
+
+    linkedin_url = serializers.URLField(
+        required=False,
+        allow_blank=True
+    )
+
+    city = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True
+    )
+
+    id_type = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True
+    )
+
+    id_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True
+    )
+
     def validate_email(self, value):
-        return value.lower()
+        return value.strip().lower()
 
     def validate(self, data):
-        email = data["email"]
-        if CustomUser.objects.filter(email__iexact=email).exclude(
-            pk=self.instance.user.pk
-        ).exists():
+        email = data.get("email")
+
+        if email and CustomUser.objects.filter(
+            email__iexact=email
+        ).exclude(pk=self.instance.user.pk).exists():
             raise serializers.ValidationError({
                 "email": "An account with this email already exists."
             })
 
         return data
+
     def update(self, instance, validated_data):
         user = instance.user
-        user.email = validated_data["email"]
-        user.username = validated_data["email"]
-        user.save(update_fields=["email","username"])
 
-        instance.full_name = validated_data["full_name"]
-        instance.organization_name = validated_data["organization_name"]
-        instance.specialty = validated_data["specialty"]
-        instance.phone = validated_data.get("phone")
-        instance.status = validated_data["status"]
+        if "email" in validated_data:
+            user.email = validated_data["email"]
+            user.username = validated_data["email"]
+            user.save(update_fields=["email", "username"])
+
+        # Update partner profile fields
+        editable_fields = [
+            "full_name",
+            "organization_name",
+            "specialty",
+            "phone",
+            "status",
+            "years_of_experience",
+            "sebi_registration_number",
+            "license_certificate_number",
+            "linkedin_url",
+            "city",
+            "id_type",
+            "id_number",
+        ]
+
+        for field in editable_fields:
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
 
         instance.save()
 
         return instance
+
 
 
 
