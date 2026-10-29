@@ -16,7 +16,7 @@ from django.utils.encoding import force_bytes
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from projects.models import Project, ProjectDocument, DocumentRequirement
-from businesses.models import BusinessProfile
+from businesses.models import BusinessProfile, ProjectFundingInterest
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -692,4 +692,64 @@ class BusinessDashboardSummaryView(APIView):
                 },
             },
             status=status.HTTP_200_OK
+        )
+
+class BusinessFundingStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.user_type != "business":
+            return Response(
+                {"detail": "Only business users can view funding status."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            business = request.user.business_profile
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"detail": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        interests = (
+            ProjectFundingInterest.objects
+            .filter(project__business=business)
+            .exclude(status="withdrawn")
+            .select_related(
+                "project",
+                "funding_partner",
+                "funding_partner__investor_profile",
+            )
+            .order_by("-created_at")
+        )
+
+        results = []
+
+        for interest in interests:
+            investor = interest.funding_partner
+
+            try:
+                profile = investor.investor_profile
+                investor_name = profile.full_name
+                organization = profile.organization or ""
+            except Exception:
+                investor_name = investor.email
+                organization = ""
+
+            results.append({
+                "id": interest.id,
+                "investor_name": investor_name,
+                "organization": organization,
+                "project_id": interest.project_id,
+                "project_name": interest.project.project_name,
+                "project_reference": interest.project.reference_no,
+                "date": interest.created_at,
+                "proposed_amount": interest.proposed_amount,
+                "status": interest.status,
+            })
+
+        return Response(
+            {"results": results},
+            status=status.HTTP_200_OK,
         )
