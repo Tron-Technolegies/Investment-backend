@@ -15,7 +15,9 @@ from pathlib import Path
 import os
 from django.apps import config
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
+from corsheaders.defaults import default_headers
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -82,11 +84,15 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-}
 
-REST_FRAMEWORK.setdefault(
-    "DEFAULT_THROTTLE_RATES", {}
-)["screening_anonymous"] = "120/hour"
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+
+    "DEFAULT_THROTTLE_RATES": {
+        "screening_anonymous": "120/hour",
+    },
+}
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=300),
@@ -108,6 +114,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    "x-screening-token",
 ]
 
 
