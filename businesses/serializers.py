@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import BusinessProfile, BusinessDocument
+from .models import BusinessProfile, BusinessDocument,BusinessNDA
 from accounts.models import FinanceType
 from accounts.models import CustomUser
 
@@ -370,3 +370,187 @@ from rest_framework import serializers
 from .models import ProjectFundingInterest
 
 
+
+
+from rest_framework import serializers
+
+
+# 1. Display NDA details
+
+class BusinessNDASerializer(serializers.ModelSerializer):
+
+    business_name = serializers.CharField(
+        source="business.business_trade_name",
+        read_only=True
+    )
+
+    class Meta:
+        model = BusinessNDA
+
+        fields = [
+            "id",
+            "business",
+            "business_name",
+            "status",
+            "nda_document",
+            "signed_document",
+            "sent_at",
+            "signed_at",
+            "executed_on",
+            "verified_at",
+            "verified_by",
+            "admin_note",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = fields
+
+
+# 2. Admin uploads NDA document
+
+class BusinessNDAUploadSerializer(serializers.Serializer):
+
+    nda_document = serializers.FileField()
+
+    def validate_nda_document(self, value):
+
+        if not value.name.lower().endswith(".pdf"):
+            raise serializers.ValidationError(
+                "Only PDF documents are allowed."
+            )
+
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "Maximum allowed file size is 10 MB."
+            )
+
+        return value
+
+
+# 3. Business uploads signed NDA
+
+class BusinessNDASignedSerializer(serializers.Serializer):
+
+    signed_document = serializers.FileField()
+
+    def validate_signed_document(self, value):
+
+        if not value.name.lower().endswith(".pdf"):
+            raise serializers.ValidationError(
+                "Only PDF documents are allowed."
+            )
+
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "Maximum allowed file size is 10 MB."
+            )
+
+        return value
+
+
+# 4. Admin verifies signed NDA
+
+class BusinessNDAReviewSerializer(serializers.Serializer):
+
+    status = serializers.ChoiceField(
+        choices=["verified", "rejected"]
+    )
+
+    executed_on = serializers.DateField(
+        required=False,
+        allow_null=True
+    )
+
+    admin_note = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    def validate(self, attrs):
+
+        if attrs["status"] == "verified":
+            if not attrs.get("executed_on"):
+                raise serializers.ValidationError({
+                    "executed_on": (
+                        "NDA execution date is required."
+                    )
+                })
+
+        if attrs["status"] == "rejected":
+            if not attrs.get("admin_note", "").strip():
+                raise serializers.ValidationError({
+                    "admin_note": (
+                        "Rejection reason is required."
+                    )
+                })
+
+        return attrs
+
+
+
+class BusinessProfileConfirmationSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+        model = BusinessProfile
+
+        fields = [
+            "full_name",
+            "business_trade_name",
+            "cin_reg_no",
+            "business_type",
+            "sector",
+            "city_hq",
+            "mobile_number",
+            "business_incorporation_date",
+        ]
+
+        extra_kwargs = {
+            "full_name": {"required": True, "allow_blank": False},
+            "business_trade_name": {
+                "required": True,
+                "allow_blank": False
+            },
+            "cin_reg_no": {
+                "required": True,
+                "allow_blank": False,
+                "allow_null": False
+            },
+            "business_type": {"required": True},
+            "sector": {
+                "required": True,
+                "allow_blank": False,
+                "allow_null": False
+            },
+            "city_hq": {
+                "required": True,
+                "allow_blank": False,
+                "allow_null": False
+            },
+            "mobile_number": {
+                "required": True,
+                "allow_blank": False,
+                "allow_null": False
+            },
+            "business_incorporation_date": {
+                "required": True,
+                "allow_null": False
+            },
+        }
+
+    def validate(self, attrs):
+        for field in [
+            "full_name",
+            "business_trade_name",
+            "cin_reg_no",
+            "city_hq",
+            "mobile_number",
+        ]:
+            if not str(attrs.get(field, "")).strip():
+                raise serializers.ValidationError({
+                    field: "This field is required."
+                })
+
+        return attrs

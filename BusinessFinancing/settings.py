@@ -73,7 +73,9 @@ INSTALLED_APPS = [
     'investors',
     'businesses',
     'partners',
-    'projects'
+    'projects',
+    'business_screenings',
+        
 ]
 
 REST_FRAMEWORK = {
@@ -81,6 +83,10 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
+
+REST_FRAMEWORK.setdefault(
+    "DEFAULT_THROTTLE_RATES", {}
+)["screening_anonymous"] = "120/hour"
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=300),

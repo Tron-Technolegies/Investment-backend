@@ -1,14 +1,16 @@
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAdminUser,IsAuthenticated
+from business_screenings.models import BusinessScreening
 
-from .models import BusinessProfile,BusinessDocument
+from .models import BusinessProfile,BusinessDocument,BusinessNDA
 from django.db import transaction,models
 from django.db.models import Count
 from accounts.models import CustomUser
+from .models import BusinessNDA
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import BusinessListSerializer,BusinessCreateSerializer,BusinessDetailSerializer,BusinessUpdateSerializer,BusinessDocumentSerializer,BusinessVerificationSerializer,MyBusinessProfileSerializer
+from .serializers import BusinessListSerializer,BusinessCreateSerializer,BusinessDetailSerializer,BusinessUpdateSerializer,BusinessDocumentSerializer,BusinessVerificationSerializer,MyBusinessProfileSerializer,BusinessProfileConfirmationSerializer
 from django.core.mail import send_mail
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
@@ -475,14 +477,23 @@ class BusinessVerificationView(APIView):
         serializer = BusinessVerificationSerializer(business)
         return Response(serializer.data)
 
+    
+    @transaction.atomic
     def patch(self, request, business_id):
-        if not (request.user.is_staff or request.user.is_superuser):
+
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+        ):
             return Response(
-                {"detail": "Only admins can update business verification."},
-                status=status.HTTP_403_FORBIDDEN,
+                {"detail": "Admin permission required."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
-        business = get_object_or_404(BusinessProfile, pk=business_id)
+        business = get_object_or_404(
+            BusinessProfile.objects.select_for_update(),
+            pk=business_id
+        )
 
         new_status = request.data.get("verification_status")
         note = request.data.get("verification_note", "")
@@ -500,19 +511,120 @@ class BusinessVerificationView(APIView):
                     "detail": "Invalid verification status.",
                     "allowed_statuses": sorted(allowed_statuses),
                 },
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        if new_status in {"requires_change", "rejected"} and not note.strip():
-            return Response(
-                {"detail": "A verification note is required for this status."},
-                status=status.HTTP_400_BAD_REQUEST,
+        if new_status in {"requires_change", "rejected"}:
+            if not isinstance(note, str) or not note.strip():
+                return Response(
+                    {
+                        "verification_note":
+                        "A reason is required."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Additional checks for final approval only
+        if new_status == "verified":
+
+            screening_approved = BusinessScreening.objects.filter(
+                user=business.user,
+                status="approved"
+            ).exists()
+
+            if not screening_approved:
+                return Response(
+                    {
+                        "detail":
+                        "Business screening is not approved."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            nda_verified = BusinessNDA.objects.filter(
+                business=business,
+                status="verified"
+            ).exists()
+
+            if not nda_verified:
+                return Response(
+                    {
+                        "detail":
+                        "Business NDA must be verified."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            required_fields = [
+                "full_name",
+                "business_trade_name",
+                "cin_reg_no",
+                "business_type",
+                "sector",
+                "city_hq",
+                "mobile_number",
+                "business_incorporation_date",
+            ]
+
+            missing_fields = [
+                field
+                for field in required_fields
+                if not getattr(business, field, None)
+            ]
+
+            if missing_fields:
+                return Response(
+                    {
+                        "detail":
+                        "Business profile is incomplete.",
+                        "missing_fields": missing_fields,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            documents = BusinessDocument.objects.filter(
+                business=business
             )
+
+            if not documents.exists():
+                return Response(
+                    {
+                        "detail":
+                        "Business verification documents are required."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            pending_documents = documents.exclude(
+                status="approved"
+            )
+
+            if pending_documents.exists():
+                return Response(
+                    {
+                        "detail":
+                        "All submitted business documents must be approved.",
+                        "pending_document_ids": list(
+                            pending_documents.values_list(
+                                "id", flat=True
+                            )
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         business.verification_status = new_status
-        business.verification_note = note
-        business.verified_by = request.user
-        business.verified_at = timezone.now()
+        business.verification_note = (
+            note.strip() if isinstance(note, str) else ""
+        )
+
+        if new_status == "verified":
+            business.verified_by = request.user
+            business.verified_at = timezone.now()
+        else:
+            business.verified_by = None
+            business.verified_at = None
+
         business.save(
             update_fields=[
                 "verification_status",
@@ -523,7 +635,17 @@ class BusinessVerificationView(APIView):
         )
 
         serializer = BusinessVerificationSerializer(business)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                "message": (
+                    "Business verification updated successfully."
+                ),
+                "business": serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )
+
 
 
 
@@ -556,6 +678,31 @@ class MyBusinessProfileView(APIView):
             return Response(
                 {"detail": "Business profile not found or access denied."},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not BusinessNDA.objects.filter(
+            business=profile,
+            status="verified"
+        ).exists():
+            return Response(
+                {
+                    "detail": (
+                        "NDA verification is required before "
+                        "editing business identity."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if profile.verification_status == "verified":
+            return Response(
+                {
+                    "detail": (
+                        "Verified profiles require admin approval "
+                        "before identity changes."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT
             )
 
         serializer = MyBusinessProfileSerializer(
@@ -752,4 +899,427 @@ class BusinessFundingStatusView(APIView):
         return Response(
             {"results": results},
             status=status.HTTP_200_OK,
+        )
+
+
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.parsers import MultiPartParser, FormParser
+
+from business_screenings.models import BusinessScreening
+
+from .models import BusinessProfile, BusinessNDA
+from .serializers import (
+    BusinessNDASerializer,
+    BusinessNDAUploadSerializer,
+    BusinessNDASignedSerializer,
+    BusinessNDAReviewSerializer,
+)
+
+
+def get_approved_business(business_id):
+    """
+    Retrieve a business whose initial screening
+    has been approved by admin.
+    """
+    business = get_object_or_404(
+        BusinessProfile,
+        pk=business_id
+    )
+
+    approved = BusinessScreening.objects.filter(
+        user=business.user,
+        status="approved"
+    ).exists()
+
+    if not approved:
+        return business, False
+
+    return business, True
+
+
+# 1. ADMIN UPLOADS NDA / BUSINESS VIEWS NDA
+
+class BusinessNDAView(APIView):
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, business_id):
+
+        business = get_object_or_404(
+            BusinessProfile,
+            pk=business_id
+        )
+
+        # Only admin or the business owner can view
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+            or business.user_id == request.user.pk
+        ):
+            return Response(
+                {"detail": "Permission denied."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        nda = BusinessNDA.objects.filter(
+            business=business
+        ).first()
+
+        if not nda:
+            return Response({
+                "business_id": business.id,
+                "status": "not_started",
+                "message": "No NDA has been issued yet."
+            })
+
+        return Response(
+            BusinessNDASerializer(
+                nda,
+                context={"request": request}
+            ).data
+        )
+
+    def post(self, request, business_id):
+
+        if not request.user.is_staff:
+            if not request.user.is_superuser:
+                return Response(
+                    {"detail": "Admin permission required."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        serializer = BusinessNDAUploadSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+
+            business, approved = get_approved_business(
+                business_id
+            )
+
+            if not approved:
+                return Response(
+                    {
+                        "detail": (
+                            "Business screening must be approved "
+                            "before issuing an NDA."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            nda, created = (
+                BusinessNDA.objects.select_for_update()
+                .get_or_create(business=business)
+            )
+
+            if nda.status in ("signed", "verified"):
+                return Response(
+                    {
+                        "detail": (
+                            "This NDA has already been signed. "
+                            "It cannot be replaced through this API."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            nda.nda_document = (
+                serializer.validated_data["nda_document"]
+            )
+
+            nda.status = "sent"
+            nda.sent_at = timezone.now()
+
+            # Previous rejected submission is superseded
+            nda.signed_document = None
+            nda.signed_at = None
+            nda.executed_on = None
+            nda.verified_at = None
+            nda.verified_by = None
+            nda.admin_note = ""
+
+            nda.save()
+
+        return Response(
+            {
+                "message": "NDA issued successfully.",
+                "nda": BusinessNDASerializer(
+                    nda,
+                    context={"request": request}
+                ).data
+            },
+            status=status.HTTP_201_CREATED
+            if created else status.HTTP_200_OK
+        )
+
+
+# 2. BUSINESS UPLOADS SIGNED NDA
+
+class BusinessNDASignView(APIView):
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, business_id):
+
+        business = get_object_or_404(
+            BusinessProfile,
+            pk=business_id
+        )
+
+        # Only the owner of this business can submit
+        if business.user_id != request.user.pk:
+            return Response(
+                {"detail": "Only the business owner can sign."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = BusinessNDASignedSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+
+            nda = get_object_or_404(
+                BusinessNDA.objects.select_for_update(),
+                business=business
+            )
+
+            if nda.status not in ("sent", "rejected"):
+                return Response(
+                    {
+                        "detail": (
+                            "NDA is not currently available "
+                            "for signing."
+                        ),
+                        "current_status": nda.status
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            if not nda.nda_document:
+                return Response(
+                    {"detail": "NDA document is missing."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            nda.signed_document = (
+                serializer.validated_data["signed_document"]
+            )
+
+            nda.status = "signed"
+            nda.signed_at = timezone.now()
+            nda.executed_on = None
+            nda.verified_at = None
+            nda.verified_by = None
+            nda.admin_note = ""
+
+            nda.save()
+
+        return Response(
+            {
+                "message": (
+                    "Signed NDA submitted successfully. "
+                    "Awaiting admin verification."
+                ),
+                "nda": BusinessNDASerializer(
+                    nda,
+                    context={"request": request}
+                ).data
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# 3. ADMIN VERIFIES OR REJECTS SIGNED NDA
+
+class BusinessNDAReviewView(APIView):
+
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, business_id):
+
+        serializer = BusinessNDAReviewSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+
+            business = get_object_or_404(
+                BusinessProfile,
+                pk=business_id
+            )
+
+            nda = get_object_or_404(
+                BusinessNDA.objects.select_for_update(),
+                business=business
+            )
+
+            if nda.status != "signed":
+                return Response(
+                    {
+                        "detail": (
+                            "Only submitted signed NDAs "
+                            "can be reviewed."
+                        ),
+                        "current_status": nda.status
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            if not nda.signed_document:
+                return Response(
+                    {"detail": "Signed NDA document is missing."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            decision = serializer.validated_data["status"]
+
+            nda.status = decision
+            nda.admin_note = serializer.validated_data.get(
+                "admin_note", ""
+            )
+
+            if decision == "verified":
+
+                nda.executed_on = (
+                    serializer.validated_data["executed_on"]
+                )
+                nda.verified_at = timezone.now()
+                nda.verified_by = request.user
+
+            else:
+
+                nda.executed_on = None
+                nda.verified_at = None
+                nda.verified_by = None
+
+            nda.save()
+
+        return Response({
+            "message": f"NDA {decision} successfully.",
+            "nda": BusinessNDASerializer(
+                nda,
+                context={"request": request}
+            ).data
+        })
+
+
+
+
+class BusinessProfileConfirmationView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        if getattr(request.user, "user_type", None) != "business":
+            return Response(
+                {"detail": "Business account required."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        with transaction.atomic():
+
+            business = get_object_or_404(
+                BusinessProfile.objects.select_for_update(),
+                user=request.user
+            )
+
+            # Check screening approval
+            screening_approved = BusinessScreening.objects.filter(
+                user=request.user,
+                status="approved"
+            ).exists()
+
+            if not screening_approved:
+                return Response(
+                    {
+                        "detail": (
+                            "Business screening must be approved "
+                            "before profile confirmation."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Check verified NDA
+            nda_verified = BusinessNDA.objects.filter(
+                business=business,
+                status="verified"
+            ).exists()
+
+            if not nda_verified:
+                return Response(
+                    {
+                        "detail": (
+                            "NDA must be verified before "
+                            "submitting company identity."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            if business.verification_status == "verified":
+                return Response(
+                    {
+                        "detail": (
+                            "Verified business profiles cannot "
+                            "be changed through this API."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            serializer = BusinessProfileConfirmationSerializer(
+                business,
+                data=request.data
+            )
+
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+            # Send identity information for admin review
+            business.verification_status = "under_review"
+            business.verification_note = ""
+            business.verified_at = None
+            business.verified_by = None
+
+            business.save(
+                update_fields=[
+                    "verification_status",
+                    "verification_note",
+                    "verified_at",
+                    "verified_by",
+                ]
+            )
+
+        return Response(
+            {
+                "message": (
+                    "Business profile submitted "
+                    "for admin verification."
+                ),
+                "business_id": business.id,
+                "business_trade_name": business.business_trade_name,
+                "verification_status": business.verification_status,
+                "profile": BusinessProfileConfirmationSerializer(
+                    business
+                ).data
+            },
+            status=status.HTTP_200_OK
         )

@@ -14,5 +14,10 @@ urlpatterns = [
     path("<int:business_id>/verification/",views.BusinessVerificationView.as_view(),name="business-verification"),
     path("my-profile/",views.MyBusinessProfileView.as_view(),name="my-business-profile"),
     path("dashboard-summary/",views.BusinessDashboardSummaryView.as_view(),name="business-dashboard-summary"),
-    path("funding-status/",views.BusinessFundingStatusView.as_view(),name="business-funding-status"),
+    path("funding-status/",views.BusinessFundingStatusView.as_view(),name="business-funding-status"), 
+    path("<int:business_id>/nda/",views.BusinessNDAView.as_view(),name="business-nda"),
+    path("<int:business_id>/nda/sign/",views.BusinessNDASignView.as_view(),name="business-nda-sign"),
+    path("<int:business_id>/nda/review/",views.BusinessNDAReviewView.as_view(),name="business-nda-review"),
+    path("my-profile/confirm/",views.BusinessProfileConfirmationView.as_view(),name="business-profile-confirmation"),
+
 ]

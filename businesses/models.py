@@ -258,3 +258,89 @@ class ProjectFundingInterest(models.Model):
             f"{self.project.reference_no} - "
             f"{self.funding_partner.email}"
         )
+
+
+
+class BusinessNDA(models.Model):
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("sent", "Sent for Signature"),
+        ("signed", "Signed - Awaiting Verification"),
+        ("verified", "Verified"),
+        ("rejected", "Rejected"),
+    ]
+
+    business = models.OneToOneField(
+        "businesses.BusinessProfile",
+        on_delete=models.CASCADE,
+        related_name="nda"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending"
+    )
+
+    # NDA document provided by admin
+    nda_document = models.FileField(
+        upload_to="business_nda/documents/",
+        null=True,
+        blank=True
+    )
+
+    # Signed NDA uploaded by business
+    signed_document = models.FileField(
+        upload_to="business_nda/signed/",
+        null=True,
+        blank=True
+    )
+
+    sent_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    signed_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    # Date the NDA was legally executed
+    executed_on = models.DateField(
+        null=True,
+        blank=True
+    )
+
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="verified_business_ndas"
+    )
+
+    admin_note = models.TextField(
+        blank=True,
+        default=""
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    def __str__(self):
+        return (
+            f"{self.business.business_trade_name} "
+            f"- NDA ({self.status})"
+        )

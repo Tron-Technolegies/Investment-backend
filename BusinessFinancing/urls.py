@@ -25,7 +25,8 @@ urlpatterns = [
     path('investors/', include('investors.urls')),
     path('businesses/',include('businesses.urls')),
     path('partners/',include('partners.urls')),
-    path('projects/',include('projects.urls'))
+    path('projects/',include('projects.urls')),
+    path("business_screenings/", include("business_screenings.urls")),
 ]
 urlpatterns += static(
     settings.MEDIA_URL,
