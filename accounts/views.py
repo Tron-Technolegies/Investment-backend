@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.shortcuts import render
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -10,6 +10,8 @@ from .serializers import InvestorRegistrationSerializer,BusinessRegistrationSeri
 
 
 class InvestorRegistrationView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
 
     @transaction.atomic
     def post(self, request):
@@ -35,6 +37,9 @@ class InvestorRegistrationView(APIView):
         )
 
 class BusinessRegistrationView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
 
     @transaction.atomic
     def post(self, request):
@@ -59,7 +64,10 @@ class BusinessRegistrationView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 class LoginView(APIView):
-    
+        
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
 
@@ -102,6 +110,8 @@ class MeView(APIView):
         })
 
 class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
 
@@ -119,6 +129,8 @@ class ForgotPasswordView(APIView):
 
 
 class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
     def post(self, request):
         serializer = ResetPasswordSerializer(data=request.data)
 
@@ -135,6 +147,8 @@ class ResetPasswordView(APIView):
         )
 
 class SetPasswordView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
     
     def post(self, request):
         serializer = SetPasswordSerializer(data=request.data)
