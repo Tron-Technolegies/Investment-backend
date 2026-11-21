@@ -1102,10 +1102,12 @@ class ProjectMissingDocumentsView(APIView):
         )
 
 
+
 class AdminDocumentReviewQueueView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
+
         # Get all project documents
         documents = ProjectDocument.objects.select_related(
             "project",
@@ -1116,7 +1118,9 @@ class AdminDocumentReviewQueueView(APIView):
         ).order_by("-created_at")
 
         # Filter by document status
-        document_status = request.query_params.get("status", "").strip()
+        document_status = request.query_params.get(
+            "status", ""
+        ).strip()
 
         if document_status and document_status.lower() != "all":
             valid_statuses = {
@@ -1134,7 +1138,9 @@ class AdminDocumentReviewQueueView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            documents = documents.filter(status=document_status)
+            documents = documents.filter(
+                status=document_status
+            )
 
         # Search by project, reference, business or document name
         search = request.query_params.get("search", "").strip()
@@ -1149,8 +1155,10 @@ class AdminDocumentReviewQueueView(APIView):
                 | Q(document_name__icontains=search)
             )
 
-        # Optional filter by project ID
-        project_id = request.query_params.get("project_id", "").strip()
+        # Filter by project ID
+        project_id = request.query_params.get(
+            "project_id", ""
+        ).strip()
 
         if project_id:
             if not project_id.isdigit():
@@ -1159,7 +1167,25 @@ class AdminDocumentReviewQueueView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            documents = documents.filter(project_id=int(project_id))
+            documents = documents.filter(
+                project_id=int(project_id)
+            )
+
+        # Filter by business ID
+        business_id = request.query_params.get(
+            "business_id", ""
+        ).strip()
+
+        if business_id:
+            if not business_id.isdigit():
+                return Response(
+                    {"business_id": "Enter a valid business ID."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            documents = documents.filter(
+                project__business_id=int(business_id)
+            )
 
         serializer = ProjectDocumentSerializer(
             documents,
@@ -1175,11 +1201,13 @@ class AdminDocumentReviewQueueView(APIView):
                     "status": document_status or "all",
                     "search": search,
                     "project_id": project_id or None,
+                    "business_id": business_id or None,
                 },
                 "data": serializer.data,
             },
             status=status.HTTP_200_OK,
         )
+
 
 
 

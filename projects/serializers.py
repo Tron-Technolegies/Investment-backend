@@ -137,6 +137,13 @@ from .models import ProjectDocument
 
 
 class ProjectDocumentSerializer(serializers.ModelSerializer):
+
+    requirement_name = serializers.CharField(
+        source="requirement.name",
+        read_only=True,
+        default=None,
+    )
+
     uploaded_by_email = serializers.EmailField(
         source="uploaded_by.email",
         read_only=True,
@@ -153,6 +160,7 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
             "id",
             "project",
             "requirement",
+            "requirement_name",
             "document_name",
             "file",
             "file_url",
