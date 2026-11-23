@@ -741,8 +741,53 @@ class ConsultingPartnerKYCDocumentView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        document_type = request.data.get("document_type")
-        uploaded_file = request.FILES.get("file")
+        
+        # Get document type from frontend
+        raw_document_type = request.data.get("document_type", "")
+
+        if not isinstance(raw_document_type, str):
+            return Response(
+                {"document_type": "Enter a valid document type."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        document_type = raw_document_type.strip().lower()
+
+        # Accept alternative frontend keys and display labels.
+        # Convert them to existing database values.
+        document_type_aliases = {
+            "government_id": "government_id",
+            "government id": "government_id",
+            "pan": "government_id",
+            "aadhaar": "government_id",
+            "passport": "government_id",
+
+            "professional_certification": "professional_certification",
+            "professional certification": "professional_certification",
+            "professional_certificate": "professional_certification",
+
+            "sebi_certificate": "sebi_certificate",
+            "sebi_registration": "sebi_certificate",
+            "sebi registration certificate": "sebi_certificate",
+
+            "bank_proof": "bank_proof",
+            "bank_account_proof": "bank_proof",
+            "bank account proof": "bank_proof",
+
+            "address_proof": "address_proof",
+            "address proof": "address_proof",
+
+            "agreement": "agreement",
+            "nda": "agreement",
+            "nda_signed_copy": "agreement",
+            "signed_nda": "agreement",
+            "agreement / nda signed copy": "agreement",
+        }
+
+        document_type = document_type_aliases.get(
+            document_type,
+            document_type
+        )
 
         allowed_types = {
             choice[0]
@@ -751,9 +796,18 @@ class ConsultingPartnerKYCDocumentView(APIView):
 
         if document_type not in allowed_types:
             return Response(
-                {"document_type": "Choose a valid document type."},
+                {
+                    "document_type": (
+                        "Choose a valid document type."
+                    ),
+                    "received_value": raw_document_type,
+                    "allowed_types": sorted(allowed_types),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        uploaded_file = request.FILES.get("file")
+
 
         if not uploaded_file:
             return Response(
