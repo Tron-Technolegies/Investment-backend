@@ -3,6 +3,10 @@ from rest_framework import serializers
 from .models import BusinessProfile, BusinessDocument,BusinessNDA
 from accounts.models import FinanceType
 from accounts.models import CustomUser
+from .models import ProjectFundingInterest,FundingAgreement
+from .models import FundingOffer
+from django.utils import timezone
+
 
 
 class BusinessListSerializer(serializers.ModelSerializer):
@@ -367,7 +371,6 @@ class MyBusinessProfileSerializer(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from .models import ProjectFundingInterest
 
 
 
@@ -554,3 +557,279 @@ class BusinessProfileConfirmationSerializer(
                 })
 
         return attrs
+
+
+
+class AdminFundingInterestSerializer(serializers.ModelSerializer):
+
+    project_name = serializers.CharField(
+        source="project.project_name",
+        read_only=True
+    )
+
+    project_reference = serializers.CharField(
+        source="project.reference_no",
+        read_only=True
+    )
+
+    business_id = serializers.IntegerField(
+        source="project.business_id",
+        read_only=True
+    )
+
+    business_name = serializers.CharField(
+        source="project.business.business_trade_name",
+        read_only=True
+    )
+
+    investor_email = serializers.EmailField(
+        source="funding_partner.email",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    class Meta:
+        model = ProjectFundingInterest
+
+        fields = [
+            "id",
+            "project",
+            "project_name",
+            "project_reference",
+            "business_id",
+            "business_name",
+            "funding_partner",
+            "investor_email",
+            "proposed_amount",
+            "status",
+            "status_display",
+            "notes",
+            "admin_note",
+            "reviewed_by",
+            "reviewed_at",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = fields
+
+
+
+
+class FundingOfferSerializer(serializers.ModelSerializer):
+
+    interest_id = serializers.IntegerField(
+        read_only=True
+    )
+
+    project_id = serializers.IntegerField(
+        source="interest.project_id",
+        read_only=True,
+    )
+
+    project_name = serializers.CharField(
+        source="interest.project.project_name",
+        read_only=True,
+    )
+
+    status = serializers.CharField(
+        source="interest.status",
+        read_only=True,
+    )
+
+    is_expired = serializers.SerializerMethodField()
+    can_respond = serializers.SerializerMethodField()
+    agreement_id = serializers.SerializerMethodField()
+    agreement_status = serializers.SerializerMethodField()
+
+    def get_agreement_id(self, obj):
+        agreement = getattr(obj, "agreement", None)
+        return agreement.id if agreement else None
+
+
+    def get_agreement_status(self, obj):
+        agreement = getattr(obj, "agreement", None)
+        return agreement.status if agreement else None
+
+
+    class Meta:
+        model = FundingOffer
+
+        fields = [
+            "id",
+            "interest_id",
+            "project_id",
+            "project_name",
+            "amount",
+            "currency",
+            "financing_type",
+            "tenure_months",
+            "annual_rate",
+            "equity_percentage",
+            "repayment_frequency",
+            "valid_until",
+            "terms_and_conditions",
+            "status",
+            "is_expired",
+            "created_at",
+            "updated_at",
+            "business_response_note",
+            "business_responded_at",
+            "business_responded_by",
+            "can_respond",
+            "agreement_id",
+            "agreement_status",
+        ]
+
+        read_only_fields = [
+            "id",
+            "interest_id",
+            "project_id",
+            "project_name",
+            "status",
+            "is_expired",
+            "created_at",
+            "updated_at",
+            "business_response_note",
+            "business_responded_at",
+            "business_responded_by",
+            "can_respond",
+        ]
+
+    def get_is_expired(self, obj):
+        return obj.valid_until < timezone.localdate()
+
+    def get_can_respond(self, obj):
+        return (
+        obj.interest.status == "offer_sent"
+        and obj.valid_until >= timezone.localdate()
+    )
+
+    def validate(self, attrs):
+
+        errors = {}
+
+        financing_type = attrs.get("financing_type")
+        tenure = attrs.get("tenure_months")
+        annual_rate = attrs.get("annual_rate")
+        equity = attrs.get("equity_percentage")
+        repayment = attrs.get("repayment_frequency")
+        valid_until = attrs.get("valid_until")
+        terms = attrs.get("terms_and_conditions", "")
+
+        if valid_until and valid_until <= timezone.localdate():
+            errors["valid_until"] = (
+                "Offer expiry must be a future date."
+            )
+
+        if not terms.strip():
+            errors["terms_and_conditions"] = (
+                "Financing terms are required."
+            )
+
+        if financing_type in ["debt", "islamic"]:
+
+            if not tenure:
+                errors["tenure_months"] = (
+                    "Financing tenure is required."
+                )
+
+            if annual_rate is None:
+                errors["annual_rate"] = (
+                    "Annual interest or profit rate is required."
+                )
+
+            if not repayment:
+                errors["repayment_frequency"] = (
+                    "Repayment frequency is required."
+                )
+
+            if equity is not None:
+                errors["equity_percentage"] = (
+                    "Not applicable to this financing type."
+                )
+
+        elif financing_type == "equity":
+
+            if equity is None:
+                errors["equity_percentage"] = (
+                    "Equity percentage is required."
+                )
+
+            if tenure is not None:
+                errors["tenure_months"] = (
+                    "Not applicable to equity financing."
+                )
+
+            if annual_rate is not None:
+                errors["annual_rate"] = (
+                    "Not applicable to equity financing."
+                )
+
+            if repayment:
+                errors["repayment_frequency"] = (
+                    "Not applicable to equity financing."
+                )
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+
+class FundingAgreementSerializer(serializers.ModelSerializer):
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+
+    interest_id = serializers.IntegerField(
+        source="funding_offer.interest_id",
+        read_only=True,
+    )
+
+    original_uploaded = serializers.SerializerMethodField()
+    investor_signed = serializers.SerializerMethodField()
+    business_signed = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FundingAgreement
+
+        fields = [
+            "id",
+            "agreement_number",
+            "funding_offer",
+            "interest_id",
+            "status",
+            "status_display",
+            "original_uploaded",
+            "investor_signed",
+            "business_signed",
+            "uploaded_by",
+            "investor_signed_by",
+            "investor_signed_at",
+            "business_signed_by",
+            "business_signed_at",
+            "verified_by",
+            "verified_at",
+            "executed_on",
+            "admin_note",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = fields
+
+    def get_original_uploaded(self, obj):
+        return bool(obj.agreement_document)
+
+    def get_investor_signed(self, obj):
+        return bool(obj.investor_signed_document)
+
+    def get_business_signed(self, obj):
+        return bool(obj.business_signed_document)

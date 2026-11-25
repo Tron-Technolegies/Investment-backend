@@ -20,4 +20,14 @@ urlpatterns = [
     path("<int:business_id>/nda/review/",views.BusinessNDAReviewView.as_view(),name="business-nda-review"),
     path("my-profile/confirm/",views.BusinessProfileConfirmationView.as_view(),name="business-profile-confirmation"),
 
+    path("admin/funding-interests/",views.AdminFundingInterestListView.as_view(),name="admin-funding-interest-list"),
+    path("admin/funding-interests/<int:interest_id>/review/",views.AdminFundingInterestReviewView.as_view(),name="admin-funding-interest-review"),
+
+    path("funding-status/<int:interest_id>/respond/",views.BusinessFundingInterestResponseView.as_view(),name="business-funding-interest-response"),
+    path("funding-offers/<int:offer_id>/agreement/",views.FundingAgreementView.as_view(),name="funding-agreement"),
+    path("funding-agreements/<int:agreement_id>/download/<str:document_type>/",views.FundingAgreementDownloadView.as_view(),name="funding-agreement-download"),
+    path("funding-agreements/<int:agreement_id>/investor-sign/",views.InvestorAgreementSignView.as_view(),name="investor-agreement-sign"),
+    path("funding-agreements/<int:agreement_id>/business-sign/",views.BusinessAgreementSignView.as_view(),name="business-agreement-sign"),
+    path("funding-agreements/<int:agreement_id>/review/", views.AdminFundingAgreementReviewView.as_view(),name="admin-funding-agreement-review"),
+
 ]

@@ -22,6 +22,8 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from businesses.models import FundingOffer
+from businesses.serializers import FundingOfferSerializer
 
 
 logger = logging.getLogger(__name__)
@@ -323,6 +325,9 @@ class ExpressInterestView(APIView):
 class WithdrawInterestView(APIView):
     permission_classes = [IsAuthenticated]
 
+    
+
+    @transaction.atomic
     def post(self, request, project_id):
         if request.user.user_type != "investor":
             raise PermissionDenied(
@@ -330,7 +335,7 @@ class WithdrawInterestView(APIView):
             )
 
         interest = get_object_or_404(
-            ProjectFundingInterest,
+            ProjectFundingInterest.objects.select_for_update(),
             project_id=project_id,
             funding_partner=request.user,
         )
@@ -339,6 +344,20 @@ class WithdrawInterestView(APIView):
             return Response(
                 {"message": "Interest has already been withdrawn."},
                 status=status.HTTP_200_OK,
+            )
+        if interest.status not in [
+            "interested",
+            "under_review",
+            "approved",
+        ]:
+            return Response(
+                {
+                    "detail": (
+                        "This funding interest cannot be withdrawn "
+                        "through this API."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         interest.status = "withdrawn"
@@ -430,7 +449,7 @@ class InvestorDashboardSummaryView(APIView):
 
         # Requests still in progress
         active_requests_count = interests.filter(
-            status__in=["interested", "under_review", "offer_sent"]
+            status__in=["interested", "under_review", "offer_sent","approved"]
         ).count()
 
         # Latest five available opportunities
@@ -463,4 +482,126 @@ class InvestorDashboardSummaryView(APIView):
                 "recent_opportunities": recent_projects_data,
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class InvestorFundingOfferView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, interest_id):
+
+        if request.user.user_type != "investor":
+            raise PermissionDenied(
+                "Only investors can access funding offers."
+            )
+
+        interest = get_object_or_404(
+            ProjectFundingInterest,
+            id=interest_id,
+            funding_partner=request.user,
+        )
+
+        offer = get_object_or_404(
+            FundingOffer,
+            interest=interest,
+        )
+
+        serializer = FundingOfferSerializer(offer)
+
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @transaction.atomic
+    def post(self, request, interest_id):
+
+        if request.user.user_type != "investor":
+            raise PermissionDenied(
+                "Only investors can submit funding offers."
+            )
+
+        interest = get_object_or_404(
+            ProjectFundingInterest.objects.select_for_update(),
+            id=interest_id,
+            funding_partner=request.user,
+        )
+
+        # Prevent duplicate offers
+        if FundingOffer.objects.filter(
+            interest=interest
+        ).exists():
+
+            return Response(
+                {
+                    "detail": (
+                        "A funding offer has already been submitted."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Admin must approve interest first
+        if interest.status != "approved":
+            return Response(
+                {
+                    "detail": (
+                        "Admin approval is required before "
+                        "submitting a funding offer."
+                    ),
+                    "current_status": interest.status,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        project = interest.project
+        business = project.business
+
+        if project.stage != "approved":
+            return Response(
+                {"detail": "Project is not approved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            business.verification_status != "verified"
+            or business.status not in ["active", "approved"]
+            or not business.user.is_active
+        ):
+            return Response(
+                {"detail": "Business is not eligible for funding."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = FundingOfferSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        offer = serializer.save(interest=interest)
+
+        # Update existing funding interest
+        interest.proposed_amount = offer.amount
+        interest.status = "offer_sent"
+
+        interest.save(
+            update_fields=[
+                "proposed_amount",
+                "status",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Funding offer submitted successfully.",
+                "data": FundingOfferSerializer(offer).data,
+            },
+            status=status.HTTP_201_CREATED,
         )

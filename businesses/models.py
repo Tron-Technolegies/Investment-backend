@@ -1,7 +1,12 @@
 from django.db import models
 from accounts.models import CustomUser, FinanceType
 from django.conf import settings
-
+from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
+import uuid
+from django.conf import settings
+from django.core.validators import FileExtensionValidator
+from .private_storage import private_agreement_storage
 
 # Create your models here.
 class BusinessProfile(models.Model):
@@ -208,6 +213,8 @@ class ProjectFundingInterest(models.Model):
     STATUS_CHOICES = [
         ("interested", "Interested"),
         ("under_review", "Under Review"),
+        ("approved", "Approved by Admin"),
+        ("rejected", "Rejected by Admin"),
         ("offer_sent", "Offer Sent"),
         ("accepted", "Accepted"),
         ("declined", "Declined"),
@@ -240,6 +247,9 @@ class ProjectFundingInterest(models.Model):
     )
 
     notes = models.TextField(blank=True)
+    admin_note = models.TextField(blank=True,default="")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_funding_interests")
+    reviewed_at = models.DateTimeField(null=True,blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -344,3 +354,255 @@ class BusinessNDA(models.Model):
             f"{self.business.business_trade_name} "
             f"- NDA ({self.status})"
         )
+
+
+
+class FundingOffer(models.Model):
+
+    CURRENCY_CHOICES = [
+        ("AED", "AED"),
+        ("USD", "USD"),
+    ]
+
+    FINANCING_TYPE_CHOICES = [
+        ("debt", "Debt Financing"),
+        ("equity", "Equity Financing"),
+        ("islamic", "Islamic Financing"),
+    ]
+
+    REPAYMENT_CHOICES = [
+        ("monthly", "Monthly"),
+        ("quarterly", "Quarterly"),
+        ("annually", "Annually"),
+        ("maturity", "At Maturity"),
+    ]
+
+    interest = models.OneToOneField(
+        ProjectFundingInterest,
+        on_delete=models.PROTECT,
+        related_name="funding_offer",
+    )
+
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default="AED",
+    )
+
+    financing_type = models.CharField(
+        max_length=20,
+        choices=FINANCING_TYPE_CHOICES,
+    )
+
+    tenure_months = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+    )
+
+    annual_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0")),
+            MaxValueValidator(Decimal("100")),
+        ],
+    )
+
+    equity_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0.01")),
+            MaxValueValidator(Decimal("100")),
+        ],
+    )
+
+    repayment_frequency = models.CharField(
+        max_length=20,
+        choices=REPAYMENT_CHOICES,
+        blank=True,
+        default="",
+    )
+
+    valid_until = models.DateField()
+
+    terms_and_conditions = models.TextField()
+
+    business_response_note = models.TextField(
+    blank=True,
+    default="",
+    )
+
+    business_responded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    business_responded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="responded_funding_offers",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"Offer #{self.pk} - "
+            f"{self.amount} {self.currency}"
+        )
+
+
+
+class FundingAgreement(models.Model):
+
+    STATUS_CHOICES = [
+        (
+            "pending_investor_signature",
+            "Pending Investor Signature",
+        ),
+        (
+            "pending_business_signature",
+            "Pending Business Signature",
+        ),
+        (
+            "pending_verification",
+            "Pending Admin Verification",
+        ),
+        ("verified", "Verified"),
+        ("rejected", "Rejected"),
+    ]
+
+    funding_offer = models.OneToOneField(
+        FundingOffer,
+        on_delete=models.PROTECT,
+        related_name="agreement",
+    )
+
+    agreement_number = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+
+    agreement_document = models.FileField(
+        upload_to="funding_agreements/original/",
+        storage=private_agreement_storage,
+        validators=[FileExtensionValidator(["pdf"])],
+    )
+
+    investor_signed_document = models.FileField(
+        upload_to="funding_agreements/investor_signed/",
+        storage=private_agreement_storage,
+        validators=[FileExtensionValidator(["pdf"])],
+        null=True,
+        blank=True,
+    )
+
+    business_signed_document = models.FileField(
+        upload_to="funding_agreements/business_signed/",
+        storage=private_agreement_storage,
+        validators=[FileExtensionValidator(["pdf"])],
+        null=True,
+        blank=True,
+    )
+
+    status = models.CharField(
+        max_length=40,
+        choices=STATUS_CHOICES,
+        default="pending_investor_signature",
+        db_index=True,
+    )
+
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_funding_agreements",
+    )
+
+    investor_signed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="investor_signed_agreements",
+    )
+
+    investor_signed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    business_signed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="business_signed_agreements",
+    )
+
+    business_signed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="verified_funding_agreements",
+    )
+
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    executed_on = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    admin_note = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return str(self.agreement_number)

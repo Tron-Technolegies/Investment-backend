@@ -249,6 +249,11 @@ class MyInterestListSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
+    can_submit_offer = serializers.SerializerMethodField()
+
+    def get_can_submit_offer(self, obj):
+        return obj.status == "approved"
+
     class Meta:
         model = ProjectFundingInterest
         fields = [
@@ -263,6 +268,7 @@ class MyInterestListSerializer(serializers.ModelSerializer):
             "status",
             "created_at",
             "updated_at",
+            "can_submit_offer",
         ]
 
 

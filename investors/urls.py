@@ -15,5 +15,7 @@ urlpatterns = [
     path("my-interests/",views.MyInterestListView.as_view(),name="my-interest-list"),
     path("my-funding-requests/",views.MyFundingRequestsView.as_view(),name="my-funding-requests"),
     path("dashboard-summary/",views.InvestorDashboardSummaryView.as_view(),name="investor-dashboard-summary"),
+    
+    path("funding-interests/<int:interest_id>/offer/",views.InvestorFundingOfferView.as_view(),name="investor-funding-offer"),
 
 ]
